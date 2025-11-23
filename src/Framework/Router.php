@@ -11,22 +11,42 @@ class Router
     private array $routes = [];
 
     /**
+     * @param string $method
      * @param string $name
      * @param string $path
      * @param array $params
      * @return void
      * @throws Exception
      */
-    public function add(string $name, string $path, array $params = []): void
+    private function add(string $method, string $name, string $path, array $params): void
     {
         if (empty($name)) {
             throw new Exception('Route name is required');
         }
 
+        $class = array_key_first($params);
+        if (!$class || !class_exists($class)) {
+            throw new Exception("Class '$class' does not exist");
+        }
+
+        $call = $params[$class];
+        if (!$call || !method_exists($class, $call)) {
+            throw new Exception("Method '$call' for class '$class' does not exist");
+        }
+
         $this->routes[$name] = [
             'path' => $path,
-            'params' => $params
+            'params' => [
+                'method' => $method,
+                'class' => $class,
+                'call' => $call
+            ]
         ];
+    }
+
+    public function get(string $name, string $path, array $params): void
+    {
+        $this->add('get', $name, $path, $params);
     }
 
     public function match(string $path, string $method): array|bool
@@ -34,6 +54,10 @@ class Router
         $path = urldecode(trim($path));
 
         foreach ($this->routes as $route) {
+            if ($route['params']['method'] !== $method) {
+                continue;
+            }
+
             $pattern = $this->getExpression($route['path']);
 
             if (!preg_match($pattern, $path, $matches)) {
@@ -42,12 +66,7 @@ class Router
 
             $matches = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
 
-            $params = array_merge($matches, $route['params']);
-            if (array_key_exists('method', $params) && strtolower($method) !== strtolower($params['method'])) {
-                continue;
-            }
-
-            return $params;
+            return array_merge($matches, $route['params']);
         }
 
         return false;

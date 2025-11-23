@@ -2,8 +2,8 @@
 
 require __DIR__ . '/index.php';
 
-$dotenv = new Framework\Dotenv;
+$router = new \Framework\Router();
 
-$dotenv->load("../.env");
+$router->get('test', '/test/{id}', [\App\Controllers\HomeController::class => 'index']);
 
-var_dump($_ENV);
+var_dump($router->match('/test/5', 'get'));
