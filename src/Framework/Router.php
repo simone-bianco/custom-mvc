@@ -4,88 +4,87 @@ declare(strict_types=1);
 
 namespace Framework;
 
-use Exception;
-
 class Router
 {
     private array $routes = [];
 
-    /**
-     * @param string $method
-     * @param string $name
-     * @param string $path
-     * @param array $params
-     * @return void
-     * @throws Exception
-     */
-    private function add(string $method, string $name, string $path, array $params): void
+    public function get(string $path, array|callable $handler, ?string $name = null): void
     {
-        if (empty($name)) {
-            throw new Exception('Route name is required');
-        }
+        $this->add('GET', $path, $handler, $name);
+    }
 
-        $class = array_key_first($params);
-        if (!$class || !class_exists($class)) {
-            throw new Exception("Class '$class' does not exist");
-        }
+    public function post(string $path, array|callable $handler, ?string $name = null): void
+    {
+        $this->add('POST', $path, $handler, $name);
+    }
 
-        $call = $params[$class];
-        if (!$call || !method_exists($class, $call)) {
-            throw new Exception("Method '$call' for class '$class' does not exist");
-        }
+    private function add(string $method, string $path, array|callable $handler, ?string $name = null): void
+    {
+        // Ottimizzazione: Calcoliamo la regex ORA, non ad ogni richiesta
+        $regex = $this->compileRouteRegex($path);
 
-        $this->routes[$name] = [
+        $routeData = [
             'path' => $path,
-            'params' => [
-                'method' => $method,
-                'class' => $class,
-                'call' => $call
-            ]
+            'method' => strtoupper($method),
+            'handler' => $handler,
+            'regex' => $regex
         ];
+
+        // Se c'è un nome, usiamo la chiave, altrimenti appendiamo
+        if ($name) {
+            $this->routes[$name] = $routeData;
+        } else {
+            $this->routes[] = $routeData;
+        }
     }
 
-    public function get(string $name, string $path, array $params): void
+    public function match(string $path, string $method): ?array
     {
-        $this->add('get', $name, $path, $params);
-    }
-
-    public function match(string $path, string $method): array|bool
-    {
-        $path = urldecode(trim($path));
+        $path = rawurldecode(rtrim($path, '/')); // rtrim gestisce path con slash finale
+        $method = strtoupper($method);
 
         foreach ($this->routes as $route) {
-            if ($route['params']['method'] !== $method) {
+            if ($route['method'] !== $method) {
                 continue;
             }
 
-            $pattern = $this->getExpression($route['path']);
-
-            if (!preg_match($pattern, $path, $matches)) {
+            if (!preg_match($route['regex'], $path, $matches)) {
                 continue;
             }
 
-            $matches = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+            // Puliamo i match numerici, teniamo solo quelli nominativi
+            $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
 
-            return array_merge($matches, $route['params']);
+            return [
+                'handler' => $route['handler'],
+                'params' => $params
+            ];
         }
 
-        return false;
+        return null; // Ritorna null se non trova nulla (più pulito di false)
     }
 
-    private function getExpression(string $routePath): string
+    private function compileRouteRegex(string $routePath): string
     {
+        // Gestione path vuoto o root
+        if ($routePath === '/') {
+            return '#^/$#iu';
+        }
+
         $segments = array_map(function (string $segment) {
-            if (preg_match('#^\{([a-z][a-z0-9]*)\}$#', $segment, $matches)) {
-                return "(?<{$matches[1]}>[^/]*)";
+            // Caso 1: {id} -> accetta tutto tranne lo slash
+            if (preg_match('#^\{([a-zA-Z0-9_]+)\}$#', $segment, $matches)) {
+                return "(?<{$matches[1]}>[^/]+)";
             }
 
-            if (preg_match('#^\{([a-z][a-z0-9]*):(.+)\}$#', $segment, $matches)) {
-                return "(?<{$matches[1]}>$matches[2])";
+            // Caso 2: {id:\d+} -> accetta regex custom
+            if (preg_match('#^\{([a-zA-Z0-9_]+):(.+)\}$#', $segment, $matches)) {
+                return "(?<{$matches[1]}>{$matches[2]})";
             }
 
-            return $segment;
-        }, explode('/', trim($routePath)));
+            return preg_quote($segment, '#'); // Importante: escape dei caratteri speciali
+        }, explode('/', ltrim($routePath, '/')));
 
-        return '#' . implode('/', $segments) . '#iu';
+        return '#^/' . implode('/', $segments) . '$#iu';
     }
 }

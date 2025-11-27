@@ -13,7 +13,7 @@ class Dotenv
      * @return void
      * @throws EnvDoesntExistException
      */
-    public function load(string $file): void
+    public static function load(string $file): void
     {
         if (!file_exists($file)) {
             throw new EnvDoesntExistException();

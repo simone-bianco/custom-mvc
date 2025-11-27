@@ -8,7 +8,9 @@ spl_autoload_register(function (string $className) {
     require ROOT_PATH . "/src/" . str_replace("\\", "/", $className) . ".php";
 });
 
-new Framework\Dotenv()->load(ROOT_PATH . '/.env');
+Framework\Dotenv::load(ROOT_PATH . '/.env');
 
 set_error_handler('Framework\ErrorHandler::handleError');
 set_exception_handler('Framework\ErrorHandler::handleException');
+
+require ROOT_PATH . '/config/routes.php';
